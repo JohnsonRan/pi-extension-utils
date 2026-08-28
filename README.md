@@ -2,6 +2,30 @@
 
 Shared utilities for Pi extensions. The package exposes independent entry points and has no runtime dependencies or native bindings.
 
+## Semantic hooks
+
+`pi-extension-utils/semantic-hook` validates and publishes neutral best-effort events on Pi's shared `pi:semantic-hook:v1` EventBus channel without importing Pi types or runtime code.
+
+```ts
+import {
+  publishSemanticHook,
+  subscribeSemanticHooks,
+} from "pi-extension-utils/semantic-hook";
+
+const unsubscribe = subscribeSemanticHooks(
+  pi.events,
+  (hook) => console.log(hook.name, hook.values),
+  (reason) => console.warn(`ignored malformed semantic hook: ${reason}`),
+);
+
+publishSemanticHook(pi.events, {
+  name: "build-finished",
+  values: { RESULT: "SUCCESS" },
+});
+```
+
+Envelopes use lowercase kebab-case names and optional uppercase-snake string values. Parser output is an immutable copy. Delivery is synchronous, current-listener-only, and has no acknowledgement, retry, replay, buffering, or consumer exception policy. Plugins retain ownership of hook meanings, configuration, and state machines.
+
 ## Process domain
 
 `pi-extension-utils/process-domain` provides one root-owned local transport and inherited child nodes:
