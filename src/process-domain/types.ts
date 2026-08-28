@@ -95,6 +95,21 @@ export interface OpenProcessDomainOptions {
   readonly onError?: (error: Error) => void;
 }
 
+/**
+ * A reference-counted handle over one shared ProcessDomainNode.
+ *
+ * Multiple extensions in the same JS realm (e.g. two watchdog plugins each
+ * bundling their own copy of this package) must not race for the env-based
+ * host/client election: the first opener would become host and silently
+ * demote every later opener to client. openSharedProcessDomain returns the
+ * same live node to every caller in the realm; the underlying node closes
+ * only when the last handle is closed.
+ */
+export interface SharedProcessDomainHandle extends ProcessDomainNode {
+  /** Close this handle. Closes the underlying node when refcount reaches 0. */
+  release(): Promise<void>;
+}
+
 export interface PiLifecycleExtensionApi {
   on(
     event: PiLifecycleEventName,

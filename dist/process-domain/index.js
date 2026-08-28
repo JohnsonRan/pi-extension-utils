@@ -884,6 +884,105 @@ export async function openProcessDomain(options = {}) {
         throw connectionUnavailableError(error);
     }
 }
+const SHARED_NODE = Symbol.for("pi-extension-utils:process-domain:shared:v1");
+/**
+ * Open (or join) the single shared process-domain node for this JS realm.
+ *
+ * The first call hosts the domain and publishes the declaration to `env`;
+ * later calls in the same realm return a new handle over the same node
+ * instead of degrading to a client of the first caller. Handles are
+ * reference counted: the node closes only when every handle is released.
+ *
+ * Per-caller options (metadata, onError) apply only when this call is the
+ * one that actually opens the node; joining callers share the open caller's
+ * wiring, matching how a single shared node must behave.
+ */
+export async function openSharedProcessDomain(options = {}) {
+    const host = globalThis;
+    const entry = host[SHARED_NODE];
+    if (entry !== undefined) {
+        if (entry.closing !== null) {
+            // A release is in flight; wait for it so ordering stays deterministic.
+            await entry.closing;
+            return openSharedProcessDomain(options);
+        }
+        entry.refCount += 1;
+        return wrapSharedHandle(host, entry);
+    }
+    const node = await openProcessDomain(options);
+    const created = { node, refCount: 1, closing: null };
+    host[SHARED_NODE] = created;
+    return wrapSharedHandle(host, created);
+}
+function wrapSharedHandle(host, entry) {
+    let released = false;
+    const assertLive = () => {
+        if (released)
+            throw new Error("shared process-domain handle already released");
+    };
+    return {
+        get role() {
+            assertLive();
+            return entry.node.role;
+        },
+        get nodeId() {
+            assertLive();
+            return entry.node.nodeId;
+        },
+        get transport() {
+            assertLive();
+            return entry.node.transport;
+        },
+        get endpoint() {
+            assertLive();
+            return entry.node.endpoint;
+        },
+        get declaration() {
+            assertLive();
+            return entry.node.declaration;
+        },
+        peers() {
+            assertLive();
+            return entry.node.peers();
+        },
+        send(targetId, channel, value, sendOptions) {
+            assertLive();
+            return entry.node.send(targetId, channel, value, sendOptions);
+        },
+        broadcast(channel, value, sendOptions) {
+            assertLive();
+            return entry.node.broadcast(channel, value, sendOptions);
+        },
+        reportLifecycle(event, sendOptions) {
+            assertLive();
+            return entry.node.reportLifecycle(event, sendOptions);
+        },
+        subscribe(channel, listener) {
+            assertLive();
+            return entry.node.subscribe(channel, listener);
+        },
+        subscribeEvents(listener) {
+            assertLive();
+            return entry.node.subscribeEvents(listener);
+        },
+        close() {
+            return this.release();
+        },
+        async release() {
+            if (released)
+                return;
+            released = true;
+            entry.refCount -= 1;
+            if (entry.refCount > 0)
+                return;
+            if (host[SHARED_NODE] === entry)
+                delete host[SHARED_NODE];
+            entry.closing = entry.node.close().then(() => { }, () => { });
+            await entry.closing;
+            entry.closing = null;
+        },
+    };
+}
 export function attachPiLifecycle(node, pi, sessionId) {
     return node.attachPiLifecycle(pi, sessionId);
 }

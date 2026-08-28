@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachPiLifecycle, ENV_NAMES, openProcessDomain, preferredTransport, wildcardEndpoint } from "../src/process-domain/index.js";
+import { attachPiLifecycle, ENV_NAMES, openProcessDomain, openSharedProcessDomain, preferredTransport, wildcardEndpoint } from "../src/process-domain/index.js";
 
 describe("process-domain transport", () => {
   it("selects the loopback TCP wildcard endpoint", () => {
@@ -117,3 +117,69 @@ describe("process-domain transport", () => {
     }
   });
 });
+
+describe("openSharedProcessDomain", () => {
+  it("returns the same realm node to every caller and keeps it host", async () => {
+    const env: NodeJS.ProcessEnv = {};
+    const first = await openSharedProcessDomain({ env, metadata: { role: "first" }, connectTimeoutMs: 2_000, heartbeatIntervalMs: 100, heartbeatTimeoutMs: 400, heartbeatTimeToLiveMs: 300 });
+    expect(first.role).toBe("host");
+    const second = await openSharedProcessDomain({ env, metadata: { role: "second" }, connectTimeoutMs: 2_000, heartbeatIntervalMs: 100, heartbeatTimeoutMs: 400, heartbeatTimeToLiveMs: 300 });
+    // Same realm joins the host instead of degrading to a client of it.
+    expect(second.role).toBe("host");
+    expect(second.nodeId).toBe(first.nodeId);
+    expect(second.endpoint).toBe(first.endpoint);
+
+    // Both handles see the same subscribers: a real child process sending to
+    // the shared host reaches listeners registered through either handle.
+    const child = await openProcessDomain({ env: { [ENV_NAMES.DECLARATION]: env[ENV_NAMES.DECLARATION] }, metadata: { role: "child" }, connectTimeoutMs: 2_000, heartbeatIntervalMs: 100, heartbeatTimeoutMs: 400, heartbeatTimeToLiveMs: 300 });
+    try {
+      await waitForOnline(first, child.nodeId);
+      const firstReceived = new Promise<unknown>((resolve) => first.subscribe("shared-channel", (message) => resolve(message.value)));
+      const secondReceived = new Promise<unknown>((resolve) => second.subscribe("shared-channel", (message) => resolve(message.value)));
+      await child.send(first.nodeId, "shared-channel", { ok: 1 });
+      await expect(firstReceived).resolves.toEqual({ ok: 1 });
+      await expect(secondReceived).resolves.toEqual({ ok: 1 });
+    } finally {
+      await child.close();
+    }
+
+    // Reference counting: releasing one handle leaves the node alive.
+    await first.release();
+    expect(second.role).toBe("host");
+    const childAfterRelease = await openProcessDomain({ env: { [ENV_NAMES.DECLARATION]: env[ENV_NAMES.DECLARATION] }, metadata: { role: "child-2" }, connectTimeoutMs: 2_000, heartbeatIntervalMs: 100, heartbeatTimeoutMs: 400, heartbeatTimeToLiveMs: 300 });
+    try {
+      await waitForOnline(second, childAfterRelease.nodeId);
+      const stillLive = new Promise<unknown>((resolve) => second.subscribe("after-first-release", (message) => resolve(message.value)));
+      await childAfterRelease.send(second.nodeId, "after-first-release", { ok: 2 });
+      await expect(stillLive).resolves.toEqual({ ok: 2 });
+    } finally {
+      await childAfterRelease.close();
+    }
+
+    await second.release();
+    expect(env[ENV_NAMES.DECLARATION]).toBeUndefined();
+  });
+
+  it("rejects use of a released handle but allows a fresh open afterwards", async () => {
+    const env: NodeJS.ProcessEnv = {};
+    const handle = await openSharedProcessDomain({ env, connectTimeoutMs: 2_000, heartbeatIntervalMs: 100, heartbeatTimeoutMs: 400, heartbeatTimeToLiveMs: 300 });
+    const originalNodeId = handle.nodeId;
+    await handle.release();
+    expect(() => handle.peers()).toThrow(/released/);
+    const reopened = await openSharedProcessDomain({ env, connectTimeoutMs: 2_000, heartbeatIntervalMs: 100, heartbeatTimeoutMs: 400, heartbeatTimeToLiveMs: 300 });
+    expect(reopened.role).toBe("host");
+    expect(reopened.nodeId).not.toBe(originalNodeId);
+    await reopened.release();
+  });
+});
+
+function waitForOnline(node: import("../src/process-domain/index.js").ProcessDomainNode, nodeId: string, timeoutMs = 5_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const found = () => node.peers().some((peer) => peer.nodeId === nodeId && peer.status === "online");
+    if (found()) { resolve(); return; }
+    const timer = setTimeout(() => { unsubscribe(); reject(new Error(`peer ${nodeId} did not come online`)); }, timeoutMs);
+    const unsubscribe = node.subscribeEvents(() => {
+      if (found()) { clearTimeout(timer); unsubscribe(); resolve(); }
+    });
+  });
+}
