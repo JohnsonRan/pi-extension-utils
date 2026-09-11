@@ -1,6 +1,6 @@
 {
   "name": "pi-extension-utils",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Shared process transport, Pi inquiry, semantic-hook, and strict XML utilities for Pi extensions.",
   "license": "MIT",
@@ -42,6 +42,10 @@
     "./semantic-hook": {
       "types": "./dist/semantic-hook.d.ts",
       "import": "./dist/semantic-hook.js"
+    },
+    "./preempt-takeover": {
+      "types": "./dist/preempt-takeover.d.ts",
+      "import": "./dist/preempt-takeover.js"
     },
     "./package.json": "./package.json"
   },

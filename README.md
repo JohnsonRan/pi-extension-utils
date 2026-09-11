@@ -88,6 +88,34 @@ pi.on("agent_start", (_event, ctx) => {
 });
 ```
 
+## Preempt takeover
+
+`pi-extension-utils/preempt-takeover` provides a dependency-free capture-and-reissue state machine for user input that preempts a plugin-owned hidden run (a decision/reflection inquiry the plugin aborts on user takeover).
+
+pi-coding-agent 0.85.1 made `ctx.abort()` asynchronous: a user input arriving while the hidden run is still streaming is enqueued as `steer` into that run and silently dropped when the abort settles. To avoid losing user input, the host returns `handled` from its input hook for the takeover, captures the text in `PreemptTakeover`, and re-issues it as a fresh user turn once the host is idle.
+
+The module owns only the decisions and captured state; aborting the run, choosing the input-hook action, and calling `sendUserMessage` stay in the consuming plugin's adapter. It holds a single pending takeover and guards re-entry by exact text match.
+
+```ts
+import { PreemptTakeover } from "pi-extension-utils/preempt-takeover";
+
+const takeover = new PreemptTakeover();
+
+pi.on("input", (event, ctx) => {
+  // Let a re-issued takeover through untouched.
+  if (takeover.isReissuedTakeover(event.text)) return { action: "continue" };
+  if (!ownsActiveHiddenRun()) return { action: "continue" };
+  takeover.capture(event.text);
+  ctx.abort();
+  return { action: "handled" };
+});
+
+pi.on("agent_settled", async (_event, ctx) => {
+  const text = takeover.takeForReissue();
+  if (text !== null && ctx.isIdle()) await pi.sendUserMessage(text);
+});
+```
+
 ## Runtime support
 
 process-domain relies only on the portable `node:net`/`node:crypto` surface and runs the same TypeScript on Node.js, Bun, and Deno, including their standalone compiled forms. The same full liveness/reconnect acceptance file runs under all three hosts (`test:acceptance`, `test:acceptance:bun`, and `test:acceptance:deno`). The Deno harness uses `Deno.kill()` for Unix stop/continue signals because Deno 2.9.5's `node:child_process` shim incorrectly treats `killed` as a one-shot guard: after a successful `SIGSTOP`, `ChildProcess.kill("SIGCONT")` returns `false` without sending the signal. This is a Deno Node-compatibility bug, not a transport limitation. Compiled Bun and Deno host startup smoke tests are also verified.
