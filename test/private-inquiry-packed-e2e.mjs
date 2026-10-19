@@ -10,6 +10,11 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+if (process.platform === "win32") {
+	// The private-inquiry entry is POSIX-only (see README "Private inquiry").
+	console.log(JSON.stringify({ ok: true, skipped: "private-inquiry is POSIX-only" }));
+	process.exit(0);
+}
 const repoRoot = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
 const root = await mkdtemp(join(process.platform === "win32" ? tmpdir() : "/var/tmp", "piu-private-packed-"));

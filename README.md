@@ -142,7 +142,7 @@ const result = await runPrivateInquiry({
 });
 ```
 
-Requirements and installation: Pi `>=1.3.0` (an optional peer dependency, needed only by this entry). The entry depends on `pi-subagents` pinned to commit `1008e5993e90fcf13b815c97c15a0c54f7f6f116` under the private package name `private-inquiry-subagents-runtime`. `postinstall`/`prepack` run `scripts/prepare-private-runtime.mjs`, which verifies the upstream source hashes, applies the reviewed patch in `patches/pi-subagents-0.79.0`, strips public Pi discovery metadata and refuses a symlinked or shared runtime copy. Git installs therefore need lifecycle scripts enabled. This is installation and module isolation inside one Pi process, not an OS sandbox.
+Requirements and installation: Linux or macOS (the result-file guard relies on POSIX `O_NOFOLLOW` and exact path identity; Windows is not supported for this entry), Pi `>=1.3.0` (an optional peer dependency, needed only by this entry). The entry depends on `pi-subagents` pinned to commit `1008e5993e90fcf13b815c97c15a0c54f7f6f116` under the private package name `private-inquiry-subagents-runtime`. `postinstall`/`prepack` run `scripts/prepare-private-runtime.mjs`, which verifies the upstream source hashes, applies the reviewed patch in `patches/pi-subagents-0.79.0`, strips public Pi discovery metadata and refuses a symlinked or shared runtime copy. Git installs therefore need lifecycle scripts enabled. This is installation and module isolation inside one Pi process, not an OS sandbox.
 
 ## Runtime support
 

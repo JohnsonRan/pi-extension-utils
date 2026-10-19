@@ -8,7 +8,10 @@ import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import nodeTest, { type TestContext } from "node:test";
+
+// The private-inquiry entry is POSIX-only (see README "Private inquiry").
+const test = (process.platform === "win32" ? nodeTest.skip : nodeTest) as typeof nodeTest;
 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -195,7 +198,7 @@ test("abort during a provider stream settles cancelled promptly", { timeout: 60_
 	assert.equal(h.requests.length, 1, "no further provider call after abort");
 });
 
-test("abort during a slow grep subprocess kills it and settles promptly", { timeout: 60_000, skip: process.platform === "win32" ? "POSIX shell stub for rg" : false }, async (t) => {
+test("abort during a slow grep subprocess kills it and settles promptly", { timeout: 60_000 }, async (t) => {
 	// Shadow ripgrep with a slow script inside an isolated agent bin dir.
 	const agentDir = await mkdtemp(join(TEST_TMP, "piu-evidence-agent-"));
 	t.after(() => rm(agentDir, { recursive: true, force: true }));
