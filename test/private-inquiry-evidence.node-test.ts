@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 /**
  * Real stock Pi 1.3.0 conformance for the read-only evidence profile and
  * immediate cancellation, through the prepared private runtime and the moved
@@ -20,6 +21,9 @@ import {
 	runPrivateInquiry,
 } from "../src/private-inquiry.js";
 
+// POSIX: /var/tmp (not a RAM-backed /tmp); elsewhere the OS temp dir.
+const TEST_TMP = process.platform === "win32" ? tmpdir() : "/var/tmp";
+
 type Call = { readonly name: string; readonly arguments: Record<string, string | number> };
 /** One scripted child response: tool calls, plain text, or a slow stream. */
 type Step =
@@ -39,7 +43,7 @@ interface Harness {
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 async function harness(t: TestContext, script: (request: number, resultFile: string) => Step): Promise<Harness> {
-	const cwd = await mkdtemp("/var/tmp/piu-evidence-");
+	const cwd = await mkdtemp(join(TEST_TMP, "piu-evidence-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
 	await writeFile(join(cwd, "notes.txt"), "the secret evidence token is AMBER-42\n");
 	const models = await ModelRuntime.create({ modelsPath: null });
@@ -193,7 +197,7 @@ test("abort during a provider stream settles cancelled promptly", { timeout: 60_
 
 test("abort during a slow grep subprocess kills it and settles promptly", { timeout: 60_000, skip: process.platform === "win32" ? "POSIX shell stub for rg" : false }, async (t) => {
 	// Shadow ripgrep with a slow script inside an isolated agent bin dir.
-	const agentDir = await mkdtemp("/var/tmp/piu-evidence-agent-");
+	const agentDir = await mkdtemp(join(TEST_TMP, "piu-evidence-agent-"));
 	t.after(() => rm(agentDir, { recursive: true, force: true }));
 	const marker = join(agentDir, "rg.pid");
 	await mkdir(join(agentDir, "bin"), { recursive: true });

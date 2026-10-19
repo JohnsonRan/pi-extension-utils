@@ -5,13 +5,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
-const root = await mkdtemp("/var/tmp/piu-private-packed-");
+const root = await mkdtemp(join(process.platform === "win32" ? tmpdir() : "/var/tmp", "piu-private-packed-"));
 try {
 	const packDir = join(root, "pack");
 	const installRoot = join(root, "install");
@@ -63,7 +64,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { captureAnchor, createPrivateRuntime, runPrivateInquiry } from "pi-extension-utils/private-inquiry";
 
-const cwd = await mkdtemp("/var/tmp/piu-private-host-");
+const cwd = await mkdtemp(join(process.env.PIU_TMP, "piu-private-host-"));
 const models = await ModelRuntime.create({ modelsPath: null });
 let requests = 0;
 models.registerProvider("piu-test", {
@@ -111,12 +112,12 @@ try {
 		cwd: installRoot,
 		timeout: 120_000,
 		maxBuffer: 4 * 1024 * 1024,
-		env: { ...process.env, NODE_PATH: "" },
+		env: { ...process.env, NODE_PATH: "", PIU_TMP: process.platform === "win32" ? tmpdir() : "/var/tmp" },
 	}).catch(async (error) => {
 		// tsx is a dev dependency of the checkout, not of the production install.
 		if (!String(error.stderr ?? error).includes("Cannot find package 'tsx'")) throw error;
 		await execFileAsync("npm", ["install", "--no-save", "--no-audit", "--no-fund", "tsx"], { cwd: installRoot, timeout: 120_000 });
-		return execFileAsync(process.execPath, ["--import", "tsx", host], { cwd: installRoot, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
+		return execFileAsync(process.execPath, ["--import", "tsx", host], { cwd: installRoot, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, PIU_TMP: process.platform === "win32" ? tmpdir() : "/var/tmp" } });
 	});
 	const parsed = JSON.parse(hostOut.trim().split("\n").at(-1));
 	assert.equal(parsed.result.kind, "decision", JSON.stringify(parsed));

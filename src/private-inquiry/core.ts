@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { mkdir, mkdtemp, open, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type {
@@ -36,8 +37,14 @@ export const RESULT_FILE_TAG = "private_inquiry_result_file";
 /** Default result filename inside the per-inquiry private directory. */
 export const RESULT_FILE_NAME = "inquiry.json";
 
-/** Default mkdtemp prefix of the per-inquiry private directory. */
-export const RESULT_DIR_PREFIX = "/var/tmp/private-inquiry-";
+/**
+ * Default mkdtemp prefix of the per-inquiry private directory: /var/tmp on
+ * POSIX (disk-backed, unlike a RAM /tmp), the OS temp dir elsewhere.
+ */
+export const RESULT_DIR_PREFIX = join(
+	process.platform === "win32" ? tmpdir() : "/var/tmp",
+	"private-inquiry-",
+);
 
 /**
  * Consumer-visible result-file naming. Consumers that already published a

@@ -24,8 +24,11 @@ import type { WatchdogForkInput, WatchdogRuntime } from "private-inquiry-subagen
 export declare const RESULT_FILE_TAG = "private_inquiry_result_file";
 /** Default result filename inside the per-inquiry private directory. */
 export declare const RESULT_FILE_NAME = "inquiry.json";
-/** Default mkdtemp prefix of the per-inquiry private directory. */
-export declare const RESULT_DIR_PREFIX = "/var/tmp/private-inquiry-";
+/**
+ * Default mkdtemp prefix of the per-inquiry private directory: /var/tmp on
+ * POSIX (disk-backed, unlike a RAM /tmp), the OS temp dir elsewhere.
+ */
+export declare const RESULT_DIR_PREFIX: string;
 /**
  * Consumer-visible result-file naming. Consumers that already published a
  * marker/file contract (Continue: watchdog_result_file, decision.json,

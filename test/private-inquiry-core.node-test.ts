@@ -13,7 +13,8 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -30,6 +31,8 @@ import {
 	runPrivateDecision as runCore,
 } from "../src/private-inquiry/core.js";
 
+const TEST_TMP = process.platform === "win32" ? tmpdir() : "/var/tmp";
+
 const REASON_TYPES = ["JOB_DONE", "NeedReview"];
 const CONTINUE_REASON_TYPES = ["VERIFYING", "PROGRESS"];
 
@@ -37,7 +40,8 @@ const CONTINUE_REASON_TYPES = ["VERIFYING", "PROGRESS"];
 const CONTINUE_NAMING = {
 	tag: "watchdog_result_file",
 	fileName: "decision.json",
-	dirPrefix: "/var/tmp/watchdog-decision-",
+	// Continue publishes /var/tmp; Windows CI has no /var/tmp.
+	dirPrefix: join(TEST_TMP, "watchdog-decision-"),
 } as const;
 
 type ValidDecision = {
@@ -250,7 +254,7 @@ function baseOptions(
 		fork: {
 			parent: undefined as never,
 			parentProviderRegistry: undefined as never,
-			cwd: "/var/tmp",
+			cwd: TEST_TMP,
 			model: "fake/local",
 			retryPolicy: "disabled",
 		},
@@ -299,7 +303,9 @@ test("one valid file response returns a terminal decision and cleans up", async 
 	// The prompt carries the actual JSON-encoded path inside the marker.
 	assert.match(
 		children[0]!.prompts[0]!,
-		/<watchdog_result_file>"\/var\/tmp\/watchdog-decision-[^"]*\/decision\.json"<\/watchdog_result_file>$/,
+		process.platform === "win32"
+			? /<watchdog_result_file>".*watchdog-decision-[^"]*decision\.json"<\/watchdog_result_file>$/
+			: /<watchdog_result_file>"\/var\/tmp\/watchdog-decision-[^"]*\/decision\.json"<\/watchdog_result_file>$/,
 	);
 	assert.equal(forkInput.resultFile.endsWith("decision.json"), true);
 	// Owned temp resources are deleted; nothing durable remains.

@@ -1,7 +1,8 @@
+import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
 import { promisify } from "node:util";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
@@ -12,6 +13,9 @@ import {
 	PrivateInquirySetupError,
 	type ReplayableEntry,
 } from "../src/private-inquiry.js";
+
+// POSIX: /var/tmp (not a RAM-backed /tmp); elsewhere the OS temp dir.
+const TEST_TMP = process.platform === "win32" ? tmpdir() : "/var/tmp";
 
 function entry(id: string, parentId: string | null, message?: ReplayableEntry["message"], type = "message"): ReplayableEntry {
 	return { id, parentId, type: type === "message" ? "message" : type, ...(message === undefined ? {} : { message }) };
@@ -53,7 +57,7 @@ it("latestReplayableAnchor walks back past an open tool batch to the last comple
 });
 
 it("captureAnchor freezes the replayable anchor and throws a typed setup error when none exists", async () => {
-	const root = await mkdtemp("/var/tmp/piu-capture-");
+	const root = await mkdtemp(join(TEST_TMP, "piu-capture-"));
 	try {
 		const manager = SessionManager.create(root);
 		manager.appendMessage({ role: "user", content: "hello", timestamp: Date.now() });
