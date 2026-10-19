@@ -57,6 +57,12 @@ function bindRunner(runner) {
 }
 
 const root = await mkdtemp(join(tmpdir(), "pi-extension-utils-semantic-hook-"));
+// npm is npm.cmd on Windows, which execFile cannot start; run npm's own CLI script via node.
+const npm = (args, options) =>
+	process.env.npm_execpath
+		? execFileAsync(process.execPath, [process.env.npm_execpath, ...args], options)
+		: execFileAsync("npm", args, options);
+
 try {
 	const packDir = join(root, "pack");
 	const installRoot = join(root, "install");
@@ -69,24 +75,22 @@ try {
 		mkdir(cwd, { recursive: true }),
 	]);
 
-	await execFileAsync("npm", ["run", "build:dist"], {
+	await npm(["run", "build:dist"], {
 		cwd: repoRoot,
 		timeout: 120_000,
 	});
-	const { stdout } = await execFileAsync(
-		"npm",
+	const { stdout } = await npm(
 		["pack", "--json", "--pack-destination", packDir],
 		{ cwd: repoRoot, timeout: 120_000, maxBuffer: 1024 * 1024 },
 	);
 	const packed = JSON.parse(stdout);
 	assert.equal(packed.length, 1);
 	const tarball = join(packDir, packed[0].filename);
-	await execFileAsync("npm", ["init", "-y"], {
+	await npm(["init", "-y"], {
 		cwd: installRoot,
 		timeout: 30_000,
 	});
-	await execFileAsync(
-		"npm",
+	await npm(
 		[
 			"install",
 			"--ignore-scripts",

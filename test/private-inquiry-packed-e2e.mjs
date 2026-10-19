@@ -17,24 +17,28 @@ if (process.platform === "win32") {
 }
 const repoRoot = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8"));
+// npm is npm.cmd on Windows, which execFile cannot start; run npm's own CLI script via node.
+const npm = (args, options) =>
+	process.env.npm_execpath
+		? execFileAsync(process.execPath, [process.env.npm_execpath, ...args], options)
+		: execFileAsync("npm", args, options);
+
 const root = await mkdtemp(join(process.platform === "win32" ? tmpdir() : "/var/tmp", "piu-private-packed-"));
 try {
 	const packDir = join(root, "pack");
 	const installRoot = join(root, "install");
 	await Promise.all([mkdir(packDir, { recursive: true }), mkdir(installRoot, { recursive: true })]);
-	await execFileAsync("npm", ["run", "build:dist"], { cwd: repoRoot, timeout: 120_000 });
-	const { stdout } = await execFileAsync("npm", ["pack", "--json", "--pack-destination", packDir], {
+	await npm(["run", "build:dist"], { cwd: repoRoot, timeout: 120_000 });
+	const { stdout } = await npm(["pack", "--json", "--pack-destination", packDir], {
 		cwd: repoRoot,
 		timeout: 120_000,
 		maxBuffer: 1024 * 1024,
 	});
 	const tarball = join(packDir, JSON.parse(stdout)[0].filename);
-	await execFileAsync("npm", ["init", "-y"], { cwd: installRoot, timeout: 30_000 });
+	await npm(["init", "-y"], { cwd: installRoot, timeout: 30_000 });
 	// Production-only install: lifecycle scripts run (postinstall prepares the
 	// private runtime); the Git dependency is transitive to this temp root.
-	await execFileAsync(
-		"npm",
-		[
+	await npm([
 			"install",
 			"--omit=dev",
 			"--no-audit",
@@ -121,7 +125,7 @@ try {
 	}).catch(async (error) => {
 		// tsx is a dev dependency of the checkout, not of the production install.
 		if (!String(error.stderr ?? error).includes("Cannot find package 'tsx'")) throw error;
-		await execFileAsync("npm", ["install", "--no-save", "--no-audit", "--no-fund", "tsx"], { cwd: installRoot, timeout: 120_000 });
+		await npm(["install", "--no-save", "--no-audit", "--no-fund", "tsx"], { cwd: installRoot, timeout: 120_000 });
 		return execFileAsync(process.execPath, ["--import", "tsx", host], { cwd: installRoot, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, PIU_TMP: process.platform === "win32" ? tmpdir() : "/var/tmp" } });
 	});
 	const parsed = JSON.parse(hostOut.trim().split("\n").at(-1));
