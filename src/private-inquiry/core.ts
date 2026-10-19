@@ -285,6 +285,16 @@ async function readResultFile<T>(
 }
 
 /** Append the actual result-file marker to host callback text. */
+/**
+ * Non-undefined on platforms where the private-inquiry guard does not hold
+ * (POSIX O_NOFOLLOW and exact path identity); every operation fails closed.
+ * Tests may override the detected platform via PIU_PRIVATE_INQUIRY_PLATFORM.
+ */
+const UNSUPPORTED_PLATFORM_ERROR =
+	(process.env.PIU_PRIVATE_INQUIRY_PLATFORM ?? process.platform) === "win32"
+		? "pi-extension-utils/private-inquiry is supported on Linux and macOS only."
+		: undefined;
+
 /** Observer copy of a flat candidate; primitives are already immutable. */
 function shallowCopy<T>(value: T): T {
 	if (typeof value !== "object" || value === null) return value;
@@ -302,6 +312,11 @@ function withResultMarker(text: string, resultFile: string, tag: string): string
 export async function runPrivateDecision<T>(
 	options: PrivateDecisionOptions<T>,
 ): Promise<PrivateDecisionResult<T>> {
+	// Fail closed where the no-follow result-file guard and exact path
+	// identity do not hold: never fork or accept a result there.
+	if (UNSUPPORTED_PLATFORM_ERROR !== undefined) {
+		return { kind: "execution-error", error: UNSUPPORTED_PLATFORM_ERROR };
+	}
 	const { signal } = options;
 	const cancelled = (): boolean =>
 		signal?.aborted === true || !options.isCurrent();
