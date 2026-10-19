@@ -28,9 +28,10 @@ function signalChild(child, signal, bestEffort = false) {
 }
 
 async function terminateChild(child) {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise((resolve) => child.once("exit", resolve));
-  signalChild(child, "SIGTERM");
+  // On win32 the offline check already terminated the child; a second kill() returns false.
+  if (process.platform !== "win32") signalChild(child, "SIGTERM");
   await exited;
 }
 
