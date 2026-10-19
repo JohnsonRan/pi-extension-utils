@@ -47,10 +47,16 @@
       "types": "./dist/preempt-takeover.d.ts",
       "import": "./dist/preempt-takeover.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./private-inquiry": {
+      "types": "./dist/private-inquiry.d.ts",
+      "import": "./dist/private-inquiry.js"
+    }
   },
   "files": [
     "dist",
+    "scripts/prepare-private-runtime.mjs",
+    "patches",
     "LICENSE",
     "README.md",
     "THIRD_PARTY_NOTICES.md"
@@ -61,19 +67,37 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run test/*.test.ts",
-    "test:acceptance": "node test/run-acceptance.mjs && node test/semantic-hook-packed-e2e.mjs",
+    "test:acceptance": "node test/run-acceptance.mjs && node test/semantic-hook-packed-e2e.mjs && node test/private-inquiry-packed-e2e.mjs",
     "test:acceptance:bun": "bun test/run-acceptance.mjs",
     "test:acceptance:deno": "deno run --allow-all test/run-acceptance.mjs",
-    "check": "npm run typecheck && npm run lint && npm run build:dist && npm run test:unit && npm run test:acceptance"
+    "check": "npm run typecheck && npm run lint && npm run build:dist && npm run test:unit && npm run test:core && npm run test:acceptance",
+    "postinstall": "node scripts/prepare-private-runtime.mjs",
+    "prepack": "node scripts/prepare-private-runtime.mjs",
+    "test:core": "node --import tsx --test --test-concurrency=1 test/private-inquiry-core.node-test.ts test/private-inquiry-evidence.node-test.ts"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-agent-core": "1.3.0",
+    "@earendil-works/pi-ai": "1.3.0",
+    "@earendil-works/pi-coding-agent": "1.3.0",
     "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",
     "eslint": "^9.39.1",
     "globals": "^16.5.0",
+    "tsx": "^4.23.13",
+    "typebox": "1.3.7",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.57.0",
     "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "private-inquiry-subagents-runtime": "git+https://github.com/nicobailon/pi-subagents.git#1008e5993e90fcf13b815c97c15a0c54f7f6f116"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
   }
 }

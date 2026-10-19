@@ -1,6 +1,6 @@
 # pi-extension-utils
 
-Shared utilities for Pi extensions. The package exposes independent entry points and has no runtime dependencies or native bindings.
+Shared utilities for Pi extensions. The package exposes independent entry points and has no native bindings. Only the `private-inquiry` entry uses a runtime dependency (see below); every other entry point stays dependency-free at runtime and never loads it.
 
 ## Semantic hooks
 
@@ -115,6 +115,34 @@ pi.on("agent_settled", async (_event, ctx) => {
   if (text !== null && ctx.isIdle()) await pi.sendUserMessage(text);
 });
 ```
+
+## Private inquiry
+
+`pi-extension-utils/private-inquiry` runs one bounded private question in a fork of the current Pi session that the user and other extensions cannot reach. It is the private-decision core proven in pi-continue-watchdog, shared so consumers do not reinvent it. The consumer owns scheduling, prompts, payload validation, review and publication; this entry owns the mechanism:
+
+- full fork of the parent session from a frozen anchor (`captureAnchor()` picks the latest replayable entry, skipping an open tool batch; no anchor is a typed `PrivateInquirySetupError`, never a fresh or pruned fallback), with the selected provider/model/thinking;
+- one owned `/var/tmp` result file, reset to `{}` before every attempt, opened no-follow, and joined to the child's own response; the file is the only result transport, with no acknowledgement request after the write;
+- same-child correction bounded by `invalidAttemptLimit` (default 3), with typed `decision`, `decision-failed`, `cancelled` and `execution-error` outcomes;
+- `profile`: `result-write-only` (default), or `read-only-evidence`, which also admits helper-only batches of built-in `read`/`ls`/`grep`/`find` under one operation-wide allowance (default 10); mixed, duplicate, unknown or over-budget batches execute nothing;
+- `retryPolicy`: `"disabled"` or `"native"` Pi provider retry for the child;
+- aborting `signal` aborts the exact child immediately, including an in-flight provider stream or helper subprocess; `isCurrent()` is the checkpoint backstop, checked at every awaited boundary and before the result commits. A late result never commits, and the parent session and other runs are never aborted. Consumers abort `signal` as soon as they observe a revocation event.
+
+```ts
+import { captureAnchor, createPrivateRuntime, runPrivateInquiry } from "pi-extension-utils/private-inquiry";
+
+const runtime = await createPrivateRuntime(); // the only call that loads Pi and the private runtime
+const result = await runPrivateInquiry({
+  runtime,
+  fork: { parent: ctx.sessionManager, parentProviderRegistry: ctx.modelRegistry, cwd: ctx.cwd, model: "provider/id", retryPolicy: "native", anchorId: captureAnchor(ctx.sessionManager), profile: { kind: "read-only-evidence" } },
+  signal,
+  isCurrent: () => stillOwned,
+  validate: (payload) => (isVerdict(payload) ? { valid: true, value: payload } : { valid: false, error: "explain the fix" }),
+  prompt: () => "Review the work, then write the result file.",
+  correction: (error) => `Invalid result: ${error}`,
+});
+```
+
+Requirements and installation: Pi `>=1.3.0` (an optional peer dependency, needed only by this entry). The entry depends on `pi-subagents` pinned to commit `1008e5993e90fcf13b815c97c15a0c54f7f6f116` under the private package name `private-inquiry-subagents-runtime`. `postinstall`/`prepack` run `scripts/prepare-private-runtime.mjs`, which verifies the upstream source hashes, applies the reviewed patch in `patches/pi-subagents-0.79.0`, strips public Pi discovery metadata and refuses a symlinked or shared runtime copy. Git installs therefore need lifecycle scripts enabled. This is installation and module isolation inside one Pi process, not an OS sandbox.
 
 ## Runtime support
 
