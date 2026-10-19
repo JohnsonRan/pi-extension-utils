@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
@@ -122,7 +123,7 @@ it("importing the subpath loads neither the private runtime nor the Pi SDK", asy
 		"if (typeof registerHooks !== 'function') { console.log('[]'); process.exit(0); }",
 		"const loaded = [];",
 		"registerHooks({ resolve(spec, ctx, next) { const r = next(spec, ctx); loaded.push(r.url); return r; } });",
-		"await import(" + JSON.stringify(resolve(root, "src/private-inquiry.ts")) + ");",
+		"await import(" + JSON.stringify(pathToFileURL(resolve(root, "src/private-inquiry.ts")).href) + ");",
 		"const bad = loaded.filter((url) => /pi-coding-agent|private-inquiry-subagents-runtime|pi-agent-core|pi-ai/.test(url));",
 		"console.log(JSON.stringify(bad));",
 	].join("\n");
