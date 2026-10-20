@@ -38,6 +38,8 @@ export type {
 /**
  * Create one private runtime: the only call that loads the pinned private
  * pi-subagents entry (and therefore Pi). Dispose it when the owner unloads.
+ * Works only where the host transpiles TypeScript under node_modules (tsx,
+ * Bun, Deno). Pi extensions import the runtime subpath from their own source.
  */
 export async function createPrivateRuntime(): Promise<WatchdogRuntime> {
 	const mod = await import("private-inquiry-subagents-runtime/watchdog-runtime");

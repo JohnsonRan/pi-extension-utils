@@ -128,9 +128,12 @@ pi.on("agent_settled", async (_event, ctx) => {
 - aborting `signal` aborts the exact child immediately, including an in-flight provider stream or helper subprocess; `isCurrent()` is the checkpoint backstop, checked at every awaited boundary and before the result commits. A late result never commits, and the parent session and other runs are never aborted. Consumers abort `signal` as soon as they observe a revocation event.
 
 ```ts
-import { captureAnchor, createPrivateRuntime, runPrivateInquiry } from "pi-extension-utils/private-inquiry";
+import { captureAnchor, runPrivateInquiry } from "pi-extension-utils/private-inquiry";
 
-const runtime = await createPrivateRuntime(); // the only call that loads Pi and the private runtime
+// Load the runtime from the extension's own TypeScript source so Pi's loader transpiles it;
+// the only call that loads Pi and the private runtime.
+const { createWatchdogRuntime } = await import("private-inquiry-subagents-runtime/watchdog-runtime");
+const runtime = createWatchdogRuntime();
 const result = await runPrivateInquiry({
   runtime,
   fork: { parent: ctx.sessionManager, parentProviderRegistry: ctx.modelRegistry, cwd: ctx.cwd, model: "provider/id", retryPolicy: "native", anchorId: captureAnchor(ctx.sessionManager), profile: { kind: "read-only-evidence" } },
@@ -142,7 +145,7 @@ const result = await runPrivateInquiry({
 });
 ```
 
-Requirements and installation: Linux or macOS (the result-file guard relies on POSIX `O_NOFOLLOW` and exact path identity; on Windows every call fails closed with an `execution-error` and never forks), Pi `>=1.3.0` (an optional peer dependency, needed only by this entry). The entry depends on `pi-subagents` pinned to commit `1008e5993e90fcf13b815c97c15a0c54f7f6f116` under the private package name `private-inquiry-subagents-runtime`. `postinstall`/`prepack` run `scripts/prepare-private-runtime.mjs`, which verifies the upstream source hashes, applies the reviewed patch in `patches/pi-subagents-0.79.0`, strips public Pi discovery metadata and refuses a symlinked or shared runtime copy. Git installs therefore need lifecycle scripts enabled. This is installation and module isolation inside one Pi process, not an OS sandbox.
+Requirements and installation: Linux or macOS (the result-file guard relies on POSIX `O_NOFOLLOW` and exact path identity; on Windows every call fails closed with an `execution-error` and never forks), Pi `>=1.3.0` (an optional peer dependency, needed only by this entry). The entry depends on `pi-subagents` pinned to commit `1008e5993e90fcf13b815c97c15a0c54f7f6f116` under the private package name `private-inquiry-subagents-runtime`. `postinstall`/`prepack` run `scripts/prepare-private-runtime.mjs`, which verifies the upstream source hashes, applies the reviewed patch in `patches/pi-subagents-0.79.0`, strips public Pi discovery metadata and refuses a symlinked or shared runtime copy. Git installs therefore need lifecycle scripts enabled. The runtime package ships TypeScript source, so a Pi extension must import `private-inquiry-subagents-runtime/watchdog-runtime` itself, from its own `.ts` entry graph, and declare that package as a root dependency at the same pin. Pi's loader transpiles only the extension's graph. `createPrivateRuntime()` imports it from this package's compiled `dist`, and Node refuses to strip types under `node_modules`, so it works only where the host transpiles dependencies (tsx, Bun, Deno), as in this package's tests. This is installation and module isolation inside one Pi process, not an OS sandbox.
 
 ## Runtime support
 

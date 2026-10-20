@@ -15,6 +15,8 @@ export { INVALID_ATTEMPT_LIMIT, RESULT_DIR_PREFIX, RESULT_FILE_NAME, RESULT_FILE
 /**
  * Create one private runtime: the only call that loads the pinned private
  * pi-subagents entry (and therefore Pi). Dispose it when the owner unloads.
+ * Works only where the host transpiles TypeScript under node_modules (tsx,
+ * Bun, Deno). Pi extensions import the runtime subpath from their own source.
  */
 export async function createPrivateRuntime() {
     const mod = await import("private-inquiry-subagents-runtime/watchdog-runtime");

@@ -17,6 +17,8 @@ export type { ChildRetryPolicy as RetryPolicy, WatchdogChildSession as PrivateCh
 /**
  * Create one private runtime: the only call that loads the pinned private
  * pi-subagents entry (and therefore Pi). Dispose it when the owner unloads.
+ * Works only where the host transpiles TypeScript under node_modules (tsx,
+ * Bun, Deno). Pi extensions import the runtime subpath from their own source.
  */
 export declare function createPrivateRuntime(): Promise<WatchdogRuntime>;
 /** Typed setup failure carrying a stable reason. */
