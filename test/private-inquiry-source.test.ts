@@ -22,22 +22,65 @@ function entry(id: string, parentId: string | null, message?: ReplayableEntry["m
 	return { id, parentId, type: type === "message" ? "message" : type, ...(message === undefined ? {} : { message }) };
 }
 
-function assistantToolUse(id: string, parentId: string | null, callId: string) {
-	return entry(id, parentId, { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", id: callId }] });
+function assistantToolUse(id: string, parentId: string | null, ...callIds: string[]) {
+	return entry(id, parentId, { role: "assistant", stopReason: "toolUse", content: callIds.map((callId) => ({ type: "toolCall", id: callId })) });
 }
 
 function toolResult(id: string, parentId: string, callId: string) {
 	return entry(id, parentId, { role: "toolResult", content: [{ type: "toolResult", toolCallId: callId }] });
 }
 
-it("isReplayableEntry: answered tool batches replay, open batches do not", () => {
-	const open = assistantToolUse("a1", "u1", "call-1");
-	const answered = assistantToolUse("a2", "u2", "call-2");
-	const entries = [open, answered, toolResult("t2", "a2", "call-2")];
-	expect(isReplayableEntry(entries, open)).toBe(false);
-	expect(isReplayableEntry(entries, answered)).toBe(true);
-	// Non-assistant entries are always replayable anchors.
-	expect(isReplayableEntry(entries, entry("u1", null, { role: "user" }))).toBe(true);
+it("isReplayableEntry requires a closed ancestor prefix, not answers after the anchor", () => {
+	const user = entry("u", null, { role: "user" });
+	const assistant = assistantToolUse("a", "u", "call");
+	const result = toolResult("t", "a", "call");
+	const entries = [user, assistant, result];
+	expect(isReplayableEntry(entries, user)).toBe(true);
+	expect(isReplayableEntry(entries, assistant)).toBe(false);
+	expect(isReplayableEntry(entries, result)).toBe(true);
+	expect(latestReplayableAnchor(entries, "a")).toBe("u");
+	expect(() => captureAnchor({ getEntries: () => entries, getLeafId: () => "t" }, "a")).toThrow(PrivateInquirySetupError);
+});
+
+it("captureAnchor excludes a multi-tool batch until every result is in its ancestor prefix", () => {
+	const entries = [
+		entry("u", null, { role: "user" }),
+		assistantToolUse("a", "u", "hold", "read"),
+		toolResult("read-result", "a", "read"),
+	];
+	const parent = { getEntries: () => entries, getLeafId: () => entries.at(-1)!.id };
+	expect(captureAnchor(parent)).toBe("u");
+	expect(isReplayableEntry(entries, entries[2]!)).toBe(false);
+	expect(() => captureAnchor(parent, "read-result")).toThrow(PrivateInquirySetupError);
+	entries.push(toolResult("hold-result", "read-result", "hold"));
+	expect(captureAnchor(parent)).toBe("hold-result");
+	expect(isReplayableEntry(entries, entries[3]!)).toBe(true);
+});
+
+it("custom accounting metadata cannot make an open tool batch replayable", () => {
+	const entries = [
+		entry("u", null, { role: "user" }),
+		assistantToolUse("a", "u", "hold", "read"),
+		entry("accounting", "a", undefined, "custom"),
+	];
+	const parent = { getEntries: () => entries, getLeafId: () => "accounting" };
+	expect(captureAnchor(parent)).toBe("u");
+	expect(isReplayableEntry(entries, entries[2]!)).toBe(false);
+	expect(() => captureAnchor(parent, "accounting")).toThrow(PrivateInquirySetupError);
+});
+
+it("tool replies on a sibling branch do not close the selected branch's batch", () => {
+	const entries = [
+		entry("u", null, { role: "user" }),
+		assistantToolUse("a", "u", "call"),
+		toolResult("sibling-result", "u", "call"),
+		entry("current", "a", undefined, "custom"),
+	];
+	expect(latestReplayableAnchor(entries, "current")).toBe("u");
+	expect(isReplayableEntry(entries, entries[1]!)).toBe(false);
+	entries.push(toolResult("own-result", "current", "call"));
+	entries.push(assistantToolUse("other-open-batch", "u", "other-call"));
+	expect(latestReplayableAnchor(entries, "own-result")).toBe("own-result");
 });
 
 it("latestReplayableAnchor walks back past an open tool batch to the last complete entry", () => {
@@ -64,7 +107,10 @@ it("captureAnchor freezes the replayable anchor and throws a typed setup error w
 		manager.appendMessage({ role: "user", content: "hello", timestamp: Date.now() });
 		manager.appendMessage({
 			role: "assistant",
-			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: {} }],
+			content: [
+				{ type: "toolCall", id: "call-1", name: "bash", arguments: {} },
+				{ type: "toolCall", id: "call-2", name: "read", arguments: {} },
+			],
 			stopReason: "toolUse",
 			provider: "piu-test" as never,
 			api: "openai-completions" as never,
@@ -75,7 +121,7 @@ it("captureAnchor freezes the replayable anchor and throws a typed setup error w
 		const entries = manager.getEntries() as unknown as ReplayableEntry[];
 		// anchor = the user message, not the open toolUse leaf
 		expect(captureAnchor(manager)).toBe(entries[0]!.id);
-		// A real persisted toolResult message closes the batch.
+		// One result does not close a two-call batch, nor does trailing custom metadata.
 		manager.appendMessage({
 			role: "toolResult",
 			toolCallId: "call-1",
@@ -84,8 +130,20 @@ it("captureAnchor freezes the replayable anchor and throws a typed setup error w
 			isError: false,
 			timestamp: Date.now(),
 		});
+		expect(captureAnchor(manager)).toBe(entries[0]!.id);
+		const metadataId = manager.appendCustomEntry("pi-reflect-watchdog:accounting-boundary", { version: 1 });
+		expect(captureAnchor(manager)).toBe(entries[0]!.id);
+		expect(() => captureAnchor(manager, metadataId)).toThrow(PrivateInquirySetupError);
+		manager.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-2",
+			toolName: "read",
+			content: [{ type: "text", text: "done" }],
+			isError: false,
+			timestamp: Date.now(),
+		});
 		const closed = manager.getEntries() as unknown as ReplayableEntry[];
-		expect(captureAnchor(manager)).toBe(closed[2]!.id);
+		expect(captureAnchor(manager)).toBe(closed.at(-1)!.id);
 		// An explicit open-batch anchor is rejected, not silently replaced.
 		const reopened = SessionManager.create(root);
 		reopened.appendMessage({ role: "user", content: "again", timestamp: Date.now() });
